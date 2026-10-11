@@ -1,13 +1,19 @@
 from pysat.solvers import Solver
 from Encoders.binary_encoder import BinaryEncoder
+from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
 from utils import print_board, validate, SolveReport, ResultIndex
 import time
 import multiprocessing
+import traceback
 
 board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81, 100, 125, 216, 343, 512, 729, 1000, 1331]
 solver_name = "cadical153"
 timeout_seconds = 20
+Encoders = {
+    "Binary": BinaryEncoder,
+    "Commander" : CommanderEncoder
+}
 
 def solve(encoder_name : str, encoder : NQueensEncoder, result_queue : multiprocessing.Queue):
     try:
@@ -39,6 +45,7 @@ def solve(encoder_name : str, encoder : NQueensEncoder, result_queue : multiproc
         solver.delete()
     except Exception as e:
         print(f"Error during solving: {e}")
+        traceback.print_exc()
         result_queue.put(SolveReport(
             encoder_name=encoder_name,
             board_size=encoder.board_size,
@@ -97,10 +104,6 @@ def solve_with_timeout(encoders, board_sizes, timeout_second: float) -> dict[str
     return results
 
 if __name__ == "__main__":
-    Encoders = {
-        "Binary": BinaryEncoder
-    }
-    
     results = solve_with_timeout(Encoders.items(), board_sizes, timeout_seconds)
     for encoder_name, encoder_results in results.items():
         print("*" * 70)
