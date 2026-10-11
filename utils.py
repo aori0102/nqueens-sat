@@ -1,5 +1,7 @@
 from enum import Enum, auto
 
+from Encoders.nqueens_encoder import NQueensEncoder
+
 class ResultIndex(Enum):
     SAT = auto()
     UNSAT = auto()
@@ -56,6 +58,40 @@ def print_board(board_size : int, result : list[int]):
     for row in board:
         print(' '.join(row))
         
+def build_nqueens_clauses(board_size : int, encoder : NQueensEncoder) -> list[list[int]]:
+    clauses = []
+    auxilary_variable = board_size * board_size + 1
+    for row in range(board_size):
+        # ALO for each row
+        variables = [coord_to_index(board_size, row, col) for col in range(board_size)]
+        clauses.append(variables)
+        
+        # AMO for each row
+        amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+        clauses.extend(amo_clauses)
+        
+    for col in range(board_size):
+        # AMO for each column
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size)]
+        amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+        clauses.extend(amo_clauses)
+        
+    for d in range(-(board_size - 1), board_size):
+        # AMO for each main diagonal
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row - col == d]
+        if len(variables) > 1:
+            amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+            clauses.extend(amo_clauses)
+
+    for d in range(1, 2 * board_size - 2):
+        # AMO for each anti-diagonal
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row + col == d]
+        if len(variables) > 1:
+            amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+            clauses.extend(amo_clauses)
+
+    return clauses
+
 def validate(board_size : int, result : list[int]) -> bool:
     queens = []
     

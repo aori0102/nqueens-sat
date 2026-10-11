@@ -2,7 +2,7 @@ from pysat.solvers import Solver
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
-from utils import print_board, validate, SolveReport, ResultIndex
+from utils import build_nqueens_clauses, SolveReport, ResultIndex, print_board, validate
 import time
 import multiprocessing
 import traceback
@@ -15,10 +15,10 @@ Encoders = {
     "Commander" : CommanderEncoder
 }
 
-def solve(encoder_name : str, encoder : NQueensEncoder, result_queue : multiprocessing.Queue):
+def solve(encoder_name : str, encoder : NQueensEncoder, board_size : int, result_queue : multiprocessing.Queue):
     try:
         start_time = time.time()
-        clauses = encoder.encode()
+        clauses = build_nqueens_clauses(board_size, encoder)
         clause_build_time = time.time() - start_time
         
         number_of_variable = 0
@@ -34,7 +34,7 @@ def solve(encoder_name : str, encoder : NQueensEncoder, result_queue : multiproc
         
         result_queue.put(SolveReport(
             encoder_name=encoder_name,
-            board_size=encoder.board_size,
+            board_size=board_size,
             result_index=ResultIndex.SAT if is_sat else ResultIndex.UNSAT,
             clause_build_time=clause_build_time,
             solve_time=solve_time,
@@ -48,7 +48,7 @@ def solve(encoder_name : str, encoder : NQueensEncoder, result_queue : multiproc
         traceback.print_exc()
         result_queue.put(SolveReport(
             encoder_name=encoder_name,
-            board_size=encoder.board_size,
+            board_size=board_size,
             result_index=ResultIndex.ERROR,
             clause_build_time=0,
             solve_time=0,
@@ -65,9 +65,9 @@ def solve_with_timeout(encoders, board_sizes, timeout_second: float) -> dict[str
     for encoder_name, encoder_class in encoders:
         results[encoder_name] = {}
         for size in board_sizes:
-            encoder = encoder_class(size)
+            encoder = encoder_class()
             results[encoder_name][size] = None
-            p = multiprocessing.Process(target=solve, args=(encoder_name, encoder, result_queue))
+            p = multiprocessing.Process(target=solve, args=(encoder_name, encoder, size, result_queue))
             processes.append((p, encoder_name, size))
             p.start()
 
