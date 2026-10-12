@@ -13,6 +13,7 @@ class CPlexCP:
     
     def solve(self, result_queue : Queue):
         try:
+            start_time = time.time()
             self.model = CpoModel()
             self.queens = [self.model.integer_var(min=0, max=self.board_size - 1, name=f"Q{i}") for i in range(self.board_size)]
             self.model.add(self.model.all_diff(self.queens))
@@ -24,7 +25,7 @@ class CPlexCP:
                 board_size=self.board_size,
                 result_index=ResultIndex.SOLVED if solution is not None else ResultIndex.UNSOLVED,
                 clause_build_time=None,
-                solve_time=solution.get_solve_time(),
+                solve_time=time.time() - start_time,
                 num_clauses=None,
                 num_variables=None
             ))
@@ -43,29 +44,18 @@ class CPlexCP:
 
 def solve_cplex_cp_with_timeout(board_sizes, timeout_second: float) -> dict[int, SolveReport]:
     result_queue = multiprocessing.Queue()
-    processes = []
     results = {}
-    # Create a process for each encoder and board size
+    
     for size in board_sizes:
-        results[size] = None
+        print(f"Running CPLEX CP Solver for board size: {size}")
         process = multiprocessing.Process(target=CPlexCP(size).solve, args=(result_queue,))
-        processes.append((process, size))
         process.start()
+        process.join(timeout_second)
         
-    start_time = time.time()
-    while True:
-        elapsed = time.time() - start_time
-        all_finished = all(not p.is_alive() for p, _ in processes)
-        if all_finished or elapsed >= timeout_second:
-            break
-        time.sleep(0.1)
-        
-    # Clear timeout processes
-    for process, size in processes:
         if process.is_alive():
             process.terminate()
             process.join()
-            results[size] = SolveReport(
+            result_queue.put(SolveReport(
                 method_name="CPLEX_CP",
                 board_size=size,
                 result_index=ResultIndex.TIMEOUT,
@@ -73,8 +63,8 @@ def solve_cplex_cp_with_timeout(board_sizes, timeout_second: float) -> dict[int,
                 solve_time=0,
                 num_clauses=0,
                 num_variables=0
-            )
-    # Fetch results
+            ))
+            
     while not result_queue.empty():
         result = result_queue.get()
         results[result.board_size] = result

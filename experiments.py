@@ -3,7 +3,7 @@ from ConstraintProgramming.cplex_cp import solve_cplex_cp_with_timeout
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
-from utils import build_nqueens_clauses, SolveReport, ResultIndex, print_board, validate
+from utils import build_nqueens_clauses, SolveReport, ResultIndex, export_reports_to_csv, print_board, validate
 import time
 import multiprocessing
 import traceback
@@ -15,6 +15,7 @@ Encoders = {
     "Binary": BinaryEncoder,
     "Commander" : CommanderEncoder
 }
+solve_results = []
 
 def solve(encoder_name : str, encoder : NQueensEncoder, board_size : int, result_queue : multiprocessing.Queue):
     try:
@@ -59,52 +60,41 @@ def solve(encoder_name : str, encoder : NQueensEncoder, board_size : int, result
 
 def solve_with_timeout(encoders, board_sizes, timeout_second: float) -> dict[str, dict[int, SolveReport]]:
     result_queue = multiprocessing.Queue()
-    processes = []
     results = {}
 
     # Create a process for each encoder and board size
     for encoder_name, encoder_class in encoders:
-        results[encoder_name] = {}
         for size in board_sizes:
+            print(f"Running {encoder_name} Encoder for board size: {size}")
             encoder = encoder_class()
-            results[encoder_name][size] = None
-            p = multiprocessing.Process(target=solve, args=(encoder_name, encoder, size, result_queue))
-            processes.append((p, encoder_name, size))
-            p.start()
-
-    start_time = time.time()
-    while True:
-        elapsed = time.time() - start_time
-        all_finished = all(not p.is_alive() for p, _, _ in processes)
-        
-        if all_finished or elapsed >= timeout_second:
-            break
+            process = multiprocessing.Process(target=solve, args=(encoder_name, encoder, size, result_queue))
+            process.start()
+            process.join(timeout_second)
             
-        time.sleep(0.1)
+            if process.is_alive():
+                process.terminate()
+                process.join()
+                result_queue.put(SolveReport(
+                    method_name=encoder_name,
+                    board_size=size,
+                    result_index=ResultIndex.TIMEOUT,
+                    clause_build_time=0,
+                    solve_time=0,
+                    num_clauses=0,
+                    num_variables=0
+                ))
 
-    # Clear timeout processes
-    for p, encoder_name, size in processes:
-        if p.is_alive():
-            p.terminate()
-            p.join()
-            results[encoder_name][size] = SolveReport(
-                method_name=encoder_name,
-                board_size=size,
-                result_index=ResultIndex.TIMEOUT,
-                clause_build_time=0,
-                solve_time=0,
-                num_clauses=0,
-                num_variables=0
-            )
-
-    # Fetch results
     while not result_queue.empty():
         result = result_queue.get()
-        results[result.encoder_name][result.board_size] = result
-
+        if result.method_name not in results:
+            results[result.method_name] = {}
+        results[result.method_name][result.board_size] = result
+    
     return results
 
 def run_sat_solvers():
+    print("Running SAT Solvers...")
+    
     results = solve_with_timeout(Encoders.items(), board_sizes, timeout_seconds)
     for encoder_name, encoder_results in results.items():
         print("*" * 70)
@@ -119,7 +109,11 @@ def run_sat_solvers():
                 print(f"Solve Time: {report.solve_time:.6f}s")
                 print(f"Total Time: {report.solve_time + report.clause_build_time:.6f}s")
                 
+            solve_results.append(report)
+                
 def run_cplex_cp_solver():
+    print("Running CPLEX CP Solver...")
+    
     results = solve_cplex_cp_with_timeout(board_sizes, timeout_seconds)
     print("*" * 70)
     print(f"Results for CPLEX CP Solver:")
@@ -128,7 +122,11 @@ def run_cplex_cp_solver():
         print(f"Result: {report.result_index.name}")
         if report.result_index is not ResultIndex.TIMEOUT and report.result_index is not ResultIndex.ERROR:
             print(f"Solve Time: {report.solve_time:.6f}s")
+            
+        solve_results.append(report)
 
 if __name__ == "__main__":
     run_sat_solvers()
     run_cplex_cp_solver()
+    
+    export_reports_to_csv(solve_results)

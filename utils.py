@@ -1,5 +1,6 @@
 from enum import Enum, auto
-
+import csv
+from typing import List
 from Encoders.nqueens_encoder import NQueensEncoder
 
 class ResultIndex(Enum):
@@ -24,23 +25,24 @@ class SolveReport:
                  solve_time : float,
                  num_clauses: int,
                  num_variables: int):
-        self.encoder_name = method_name
-        self.board_size = board_size
-        self.result_index = result_index
-        self.clause_build_time = clause_build_time
-        self.solve_time = solve_time
-        self.num_clauses = num_clauses
-        self.num_variables = num_variables
+        self.method_name = method_name if method_name is not None else "Unknown"
+        self.board_size = board_size if board_size is not None else 0
+        self.result_index = result_index if result_index is not None else ResultIndex.ERROR
+        self.clause_build_time = clause_build_time if clause_build_time is not None else 0
+        self.solve_time = solve_time if solve_time is not None else 0
+        self.num_clauses = num_clauses if num_clauses is not None else 0
+        self.num_variables = num_variables if num_variables is not None else 0
 
     def to_dict(self):
         return {
-            "encoder_name": self.encoder_name,
-            "board_size": self.board_size,
-            "result_index": self.result_index.name,
-            "clause_build_time": self.clause_build_time,
-            "solve_time": self.solve_time,
-            "num_clauses": self.num_clauses,
-            "num_variables": self.num_variables
+            "Method Name": self.method_name,
+            "Board Size": self.board_size,
+            "Result": self.result_index.name,
+            "Clause Build Time": self.clause_build_time,
+            "Solve Time": self.solve_time,
+            "Num Clauses": self.num_clauses,
+            "Num Variables": self.num_variables,
+            "Total Time": self.clause_build_time + self.solve_time
         }
 
 def coord_to_index(board_size : int, row : int, column : int) -> int:
@@ -112,3 +114,19 @@ def validate(board_size : int, result : list[int]) -> bool:
                 return False
     
     return True
+
+def export_reports_to_csv(reports: List[SolveReport], file_path: str = "benchmark_results.csv"):
+    if not reports:
+        return
+
+    fieldnames = list(reports[0].to_dict().keys())
+
+    with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        
+        for report in reports:
+            writer.writerow(report.to_dict())
+            
+    print(f"Successfully written {len(reports)} data lines into file: {file_path}")
