@@ -7,6 +7,8 @@ class ResultIndex(Enum):
     UNSAT = auto()
     ERROR = auto()
     TIMEOUT = auto()
+    SOLVED = auto()
+    UNSOLVED = auto()
     
 class ProcessInfo:
     def __init__(self, encoder_name: str, board_size: int, ):
@@ -15,14 +17,14 @@ class ProcessInfo:
 
 class SolveReport:
     def __init__(self,
-                 encoder_name: str,
+                 method_name: str,
                  board_size: int,
                  result_index: ResultIndex,
                  clause_build_time: float,
                  solve_time : float,
                  num_clauses: int,
                  num_variables: int):
-        self.encoder_name = encoder_name
+        self.encoder_name = method_name
         self.board_size = board_size
         self.result_index = result_index
         self.clause_build_time = clause_build_time
