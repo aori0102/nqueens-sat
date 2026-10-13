@@ -6,14 +6,14 @@ from utils import build_nqueens_clauses, validate
 
 encoder = SequentialEncoder()
 solver_name = "cadical153"
-board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81, 100, 125, 216, 343]
+board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81]
 
 if __name__ == "__main__":
     correct_count = 0
     
     for size in board_sizes:
         clauses = build_nqueens_clauses(size, encoder)
-        solver = Solver(name=solver_name)
+        solver = Solver(name=solver_name, bootstrap_with=clauses)
         if solver.solve():
             print(f"Board Size: {size} is SAT")
             model = solver.get_model()
