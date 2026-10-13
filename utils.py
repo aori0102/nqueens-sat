@@ -1,10 +1,15 @@
 from enum import Enum, auto
+import csv
+from typing import List
+from Encoders.nqueens_encoder import NQueensEncoder
 
 class ResultIndex(Enum):
     SAT = auto()
     UNSAT = auto()
     ERROR = auto()
     TIMEOUT = auto()
+    SOLVED = auto()
+    UNSOLVED = auto()
     
 class ProcessInfo:
     def __init__(self, encoder_name: str, board_size: int, ):
@@ -13,30 +18,31 @@ class ProcessInfo:
 
 class SolveReport:
     def __init__(self,
-                 encoder_name: str,
+                 method_name: str,
                  board_size: int,
                  result_index: ResultIndex,
                  clause_build_time: float,
                  solve_time : float,
                  num_clauses: int,
                  num_variables: int):
-        self.encoder_name = encoder_name
-        self.board_size = board_size
-        self.result_index = result_index
-        self.clause_build_time = clause_build_time
-        self.solve_time = solve_time
-        self.num_clauses = num_clauses
-        self.num_variables = num_variables
+        self.method_name = method_name if method_name is not None else "Unknown"
+        self.board_size = board_size if board_size is not None else 0
+        self.result_index = result_index if result_index is not None else ResultIndex.ERROR
+        self.clause_build_time = clause_build_time if clause_build_time is not None else 0
+        self.solve_time = solve_time if solve_time is not None else 0
+        self.num_clauses = num_clauses if num_clauses is not None else 0
+        self.num_variables = num_variables if num_variables is not None else 0
 
     def to_dict(self):
         return {
-            "encoder_name": self.encoder_name,
-            "board_size": self.board_size,
-            "result_index": self.result_index.name,
-            "clause_build_time": self.clause_build_time,
-            "solve_time": self.solve_time,
-            "num_clauses": self.num_clauses,
-            "num_variables": self.num_variables
+            "Method Name": self.method_name,
+            "Board Size": self.board_size,
+            "Result": self.result_index.name,
+            "Clause Build Time": self.clause_build_time,
+            "Solve Time": self.solve_time,
+            "Num Clauses": self.num_clauses,
+            "Num Variables": self.num_variables,
+            "Total Time": self.clause_build_time + self.solve_time
         }
 
 def coord_to_index(board_size : int, row : int, column : int) -> int:
@@ -56,6 +62,40 @@ def print_board(board_size : int, result : list[int]):
     for row in board:
         print(' '.join(row))
         
+def build_nqueens_clauses(board_size : int, encoder : NQueensEncoder) -> list[list[int]]:
+    clauses = []
+    auxilary_variable = board_size * board_size + 1
+    for row in range(board_size):
+        # ALO for each row
+        variables = [coord_to_index(board_size, row, col) for col in range(board_size)]
+        clauses.append(variables)
+        
+        # AMO for each row
+        amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+        clauses.extend(amo_clauses)
+        
+    for col in range(board_size):
+        # AMO for each column
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size)]
+        amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+        clauses.extend(amo_clauses)
+        
+    for d in range(-(board_size - 1), board_size):
+        # AMO for each main diagonal
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row - col == d]
+        if len(variables) > 1:
+            amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+            clauses.extend(amo_clauses)
+
+    for d in range(1, 2 * board_size - 2):
+        # AMO for each anti-diagonal
+        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row + col == d]
+        if len(variables) > 1:
+            amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
+            clauses.extend(amo_clauses)
+
+    return clauses
+
 def validate(board_size : int, result : list[int]) -> bool:
     queens = []
     
@@ -74,3 +114,19 @@ def validate(board_size : int, result : list[int]) -> bool:
                 return False
     
     return True
+
+def export_reports_to_csv(reports: List[SolveReport], file_path: str = "benchmark_results.csv"):
+    if not reports:
+        return
+
+    fieldnames = list(reports[0].to_dict().keys())
+
+    with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        
+        for report in reports:
+            writer.writerow(report.to_dict())
+            
+    print(f"Successfully written {len(reports)} data lines into file: {file_path}")
