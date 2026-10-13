@@ -3,6 +3,7 @@ from ConstraintProgramming.cplex_cp import solve_cplex_cp_with_timeout
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
+from Encoders.sequential_encoder import SequentialEncoder
 from utils import build_nqueens_clauses, SolveReport, ResultIndex, export_reports_to_csv, print_board, validate
 import time
 import multiprocessing
@@ -13,7 +14,8 @@ solver_name = "cadical153"
 timeout_seconds = 20
 Encoders = {
     "Binary": BinaryEncoder,
-    "Commander" : CommanderEncoder
+    "Commander" : CommanderEncoder,
+    "Sequential" : SequentialEncoder
 }
 solve_results = []
 

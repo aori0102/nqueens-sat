@@ -1,9 +1,10 @@
 from pysat.solvers import Solver
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
+from Encoders.sequential_encoder import SequentialEncoder
 from utils import build_nqueens_clauses, validate
 
-encoder = CommanderEncoder()
+encoder = SequentialEncoder()
 solver_name = "cadical153"
 board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81, 100, 125, 216, 343]
 
