@@ -1,17 +1,20 @@
 from pysat.solvers import Solver
+from ConstraintProgramming.cp_sat import solve_cpsat_with_timeout
 from ConstraintProgramming.cplex_cp import solve_cplex_cp_with_timeout
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
 from Encoders.product_encoder import ProductEncoder
 from Encoders.sequential_encoder import SequentialEncoder
-from utils import build_nqueens_clauses, SolveReport, ResultIndex, export_reports_to_csv, print_board, validate
+from IntegerLinearProgramming.cplex_mip import solve_cplex_mip_with_timeout
+from IntegerLinearProgramming.gurobi_mip import solve_gurobi_with_timeout
+from utils import build_nqueens_clauses, SolveReport, ResultIndex, combine_csv_reports, export_reports_to_csv, print_board, validate
 import time
 import multiprocessing
 import traceback
 import argparse
 
-board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81]#, 100, 125, 216, 343, 512, 729, 1000, 1331]
+board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81, 100, 125, 216, 343, 512, 729, 1000, 1331]
 solver_name = "cadical153"
 timeout_seconds = 100
 Encoders = {
@@ -129,9 +132,104 @@ def run_cplex_cp_solver():
             print(f"Solve Time: {report.solve_time:.6f}s")
             
         solve_results.append(report)
+        
+def run_cplex_mip_solver():
+    print("Running CPLEX MIP Solver...")
+    
+    results = solve_cplex_mip_with_timeout(board_sizes, timeout_seconds)
+    print("*" * 70)
+    print(f"Results for CPLEX MIP Solver:")
+    for board_size, report in results.items():
+        print(f">>> Size: {board_size}")
+        print(f"Result: {report.result_index.name}")
+        if report.result_index is not ResultIndex.TIMEOUT and report.result_index is not ResultIndex.ERROR:
+            print(f"Solve Time: {report.solve_time:.6f}s")
+            
+        solve_results.append(report)
+        
+def run_cpsat_solver():
+    print("Running CP-SAT Solver...")
+    
+    results = solve_cpsat_with_timeout(board_sizes, timeout_seconds)
+    print("*" * 70)
+    print(f"Results for CP-SAT Solver:")
+    for board_size, report in results.items():
+        print(f">>> Size: {board_size}")
+        print(f"Result: {report.result_index.name}")
+        if report.result_index is not ResultIndex.TIMEOUT and report.result_index is not ResultIndex.ERROR:
+            print(f"Solve Time: {report.solve_time:.6f}s")
+            
+        solve_results.append(report)
+        
+def run_gurobi_mip_solver():
+    print("Running Gurobi MIP Solver...")
+    
+    results = solve_gurobi_with_timeout(board_sizes, timeout_seconds)
+    print("*" * 70)
+    print(f"Results for Gurobi MIP Solver:")
+    for board_size, report in results.items():
+        print(f">>> Size: {board_size}")
+        print(f"Result: {report.result_index.name}")
+        if report.result_index is not ResultIndex.TIMEOUT and report.result_index is not ResultIndex.ERROR:
+            print(f"Solve Time: {report.solve_time:.6f}s")
+            
+        solve_results.append(report)
 
 if __name__ == "__main__":
-    run_sat_solvers()
-    run_cplex_cp_solver()
+    parser = argparse.ArgumentParser(description="Run N-Queens Solvers")
+    parser.add_argument("--sat-binary", action="store_true", help="Run SAT solver with Binary encoding")
+    parser.add_argument("--sat-commander", action="store_true", help="Run SAT solver with Commander encoding")
+    parser.add_argument("--sat-sequential", action="store_true", help="Run SAT solver with Sequential encoding")
+    parser.add_argument("--sat-product", action="store_true", help="Run SAT solver with Product encoding")
+    parser.add_argument("--cplex-cp", action="store_true", help="Run CPLEX CP solver")
+    parser.add_argument("--cplex-mip", action="store_true", help="Run CPLEX MIP solver")
+    parser.add_argument("--cpsat", action="store_true", help="Run CP-SAT solver")
+    parser.add_argument("--gurobi-mip", action="store_true", help="Run Gurobi MIP solver")
+    parser.add_argument("--combine-reports", action="store_true", help="Combine all reports into a single CSV file")
+
+    args = parser.parse_args()
+    benchmark_file = "benchmark_results.csv"
     
-    export_reports_to_csv(solve_results)
+    if args.combine_reports:
+        combine_csv_reports([
+            "benchmark_results_binary.csv",
+            "benchmark_results_commander.csv",
+            "benchmark_results_sequential.csv",
+            "benchmark_results_product.csv",
+            "benchmark_results_cplex_cp.csv",
+            "benchmark_results_cplex_mip.csv",
+            "benchmark_results_cpsat.csv",
+            "benchmark_results_gurobi_mip.csv"
+        ], "benchmark_results_combined.csv")
+        exit(0)
+    
+    if args.sat_binary:
+        Encoders = {"Binary": BinaryEncoder}
+        benchmark_file = "benchmark_results_binary.csv"
+        run_sat_solvers()
+    elif args.sat_commander:
+        Encoders = {"Commander": CommanderEncoder}
+        benchmark_file = "benchmark_results_commander.csv"
+        run_sat_solvers()
+    elif args.sat_sequential:
+        Encoders = {"Sequential": SequentialEncoder}
+        benchmark_file = "benchmark_results_sequential.csv"
+        run_sat_solvers()
+    elif args.sat_product:
+        Encoders = {"Product": ProductEncoder}
+        benchmark_file = "benchmark_results_product.csv"
+        run_sat_solvers()
+    elif args.cplex_cp:
+        benchmark_file = "benchmark_results_cplex_cp.csv"
+        run_cplex_cp_solver()
+    elif args.cplex_mip:
+        benchmark_file = "benchmark_results_cplex_mip.csv"
+        run_cplex_mip_solver()
+    elif args.cpsat:
+        benchmark_file = "benchmark_results_cpsat.csv"
+        run_cpsat_solver()
+    elif args.gurobi_mip:
+        benchmark_file = "benchmark_results_gurobi_mip.csv"
+        run_gurobi_mip_solver()
+    
+    export_reports_to_csv(solve_results, benchmark_file)

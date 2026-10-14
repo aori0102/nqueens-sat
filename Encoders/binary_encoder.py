@@ -1,16 +1,21 @@
 from Encoders.nqueens_encoder import NQueensEncoder
 from math import ceil, log2
 
+from utils import get_amo_pairwise
+
 class BinaryEncoder(NQueensEncoder):
     
     def encode_amo(self, variables: list[int], auxilary_variable: int) -> tuple[list[list[int]], int]:
         clauses = []
         n = len(variables)
-        k = ceil(log2(n))
         if n <= 1:
             return [], auxilary_variable
         
+        if n <= 3:
+            return get_amo_pairwise(variables), auxilary_variable
+        
         clauses = []
+        k = ceil(log2(n))
         auxilaryVariables = [auxilary_variable + i for i in range(k)]
         nextAuxilaryIndex = auxilary_variable + k
         

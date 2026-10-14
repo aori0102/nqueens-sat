@@ -51,6 +51,14 @@ def coord_to_index(board_size : int, row : int, column : int) -> int:
 def index_to_coord(board_size : int, index : int) -> tuple[int, int]:
     return (index - 1) // board_size, (index - 1) % board_size
 
+def get_amo_pairwise(variables: list[int]) -> list[list[int]]:
+    clauses = []
+    n = len(variables)
+    for i in range(n):
+        for j in range(i + 1, n):
+            clauses.append([-variables[i], -variables[j]])
+    return clauses
+
 def print_board(board_size : int, result : list[int]):
     board = [['.' for _ in range(board_size)] for _ in range(board_size)]
     
@@ -75,8 +83,11 @@ def build_nqueens_clauses(board_size : int, encoder : NQueensEncoder) -> list[li
         clauses.extend(amo_clauses)
         
     for col in range(board_size):
-        # AMO for each column
+        # ALO for each column
         variables = [coord_to_index(board_size, row, col) for row in range(board_size)]
+        clauses.append(variables)
+        
+        # AMO for each column
         amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
         clauses.extend(amo_clauses)
         
@@ -130,3 +141,39 @@ def export_reports_to_csv(reports: List[SolveReport], file_path: str = "benchmar
             writer.writerow(report.to_dict())
             
     print(f"Successfully written {len(reports)} data lines into file: {file_path}")
+    
+import csv
+from typing import List
+
+def combine_csv_reports(
+    file_paths: List[str],
+    output_path: str = "benchmark_results.csv"
+):
+    if not file_paths:
+        return
+
+    with open(file_paths[0], mode="r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        fieldnames = reader.fieldnames
+
+    if not fieldnames:
+        return
+
+    total_rows = 0
+
+    with open(output_path, mode="w", newline="", encoding="utf-8") as output_file:
+        writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for file_path in file_paths:
+            with open(file_path, mode="r", newline="", encoding="utf-8") as input_file:
+                reader = csv.DictReader(input_file)
+
+                for row in reader:
+                    writer.writerow(row)
+                    total_rows += 1
+
+    print(
+        f"Successfully combined {total_rows} data lines "
+        f"from {len(file_paths)} files into: {output_path}"
+    )
