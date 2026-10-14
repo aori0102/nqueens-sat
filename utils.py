@@ -2,6 +2,7 @@ from enum import Enum, auto
 import csv
 from typing import List
 from Encoders.nqueens_encoder import NQueensEncoder
+from collections import defaultdict
 
 class ResultIndex(Enum):
     SAT = auto()
@@ -93,14 +94,14 @@ def build_nqueens_clauses(board_size : int, encoder : NQueensEncoder) -> list[li
         
     for d in range(-(board_size - 1), board_size):
         # AMO for each main diagonal
-        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row - col == d]
+        variables = [coord_to_index(board_size, row, row - d) for row in range(board_size) if 0 <= row - d < board_size]
         if len(variables) > 1:
             amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
             clauses.extend(amo_clauses)
 
-    for d in range(1, 2 * board_size - 2):
+    for d in range(2 * board_size - 1):
         # AMO for each anti-diagonal
-        variables = [coord_to_index(board_size, row, col) for row in range(board_size) for col in range(board_size) if row + col == d]
+        variables = [coord_to_index(board_size, row, d - row) for row in range(board_size) if 0 <= d - row < board_size]
         if len(variables) > 1:
             amo_clauses, auxilary_variable = encoder.encode_amo(variables, auxilary_variable)
             clauses.extend(amo_clauses)

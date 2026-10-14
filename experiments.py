@@ -25,85 +25,307 @@ Encoders = {
 }
 solve_results = []
 
-def solve(encoder_name : str, encoder : NQueensEncoder, board_size : int, result_queue : multiprocessing.Queue):
-    try:
-        start_time = time.time()
-        clauses = build_nqueens_clauses(board_size, encoder)
-        clause_build_time = time.time() - start_time
-        
-        number_of_variable = 0
-        number_of_clauses = len(clauses)
-        for clause in clauses:
-            for literal in clause:
-                number_of_variable = max(number_of_variable, abs(literal))
-        
-        solver = Solver(name=solver_name, bootstrap_with=clauses)
-        start_time = time.time()
-        is_sat = solver.solve()
-        solve_time = time.time() - start_time
-        
-        result_queue.put(SolveReport(
-            method_name=encoder_name,
-            board_size=board_size,
-            result_index=ResultIndex.SAT if is_sat else ResultIndex.UNSAT,
-            clause_build_time=clause_build_time,
-            solve_time=solve_time,
-            num_clauses=number_of_clauses,
-            num_variables=number_of_variable
-        ))
-        
-        solver.delete()
-    except Exception as e:
-        print(f"Error during solving: {e}")
-        traceback.print_exc()
-        result_queue.put(SolveReport(
-            method_name=encoder_name,
-            board_size=board_size,
-            result_index=ResultIndex.ERROR,
-            clause_build_time=0,
-            solve_time=0,
-            num_clauses=0,
-            num_variables=0
-        ))
 
-def solve_with_timeout(encoders, board_sizes, timeout_second: float) -> dict[str, dict[int, SolveReport]]:
-    result_queue = multiprocessing.Queue()
+import os
+import time
+import tempfile
+import multiprocessing
+import traceback
+from pysat.solvers import Solver
+from Encoders.nqueens_encoder import NQueensEncoder
+from utils import (
+    build_nqueens_clauses,
+    SolveReport,
+    ResultIndex,
+)
+
+SOLVER_NAME = "cadical153"
+
+def write_dimacs(clauses, path):
+    """Write a CNF clause list to DIMACS format."""
+    num_clauses = len(clauses)
+    num_variables = max(
+        (abs(lit) for clause in clauses for lit in clause),
+        default=0,
+    )
+
+    with open(path, "w", encoding="ascii") as file:
+        file.write(f"p cnf {num_variables} {num_clauses}\n")
+
+        for clause in clauses:
+            file.write(" ".join(map(str, clause)))
+            file.write(" 0\n")
+
+    return num_variables, num_clauses
+
+def iter_dimacs_clauses(path):
+    """Yield clauses one at a time, without loading the whole CNF."""
+    with open(path, "r", encoding="ascii") as file:
+        for line in file:
+            line = line.strip()
+
+            if not line or line.startswith(("c", "p")):
+                continue
+
+            literals = [int(token) for token in line.split()]
+            if literals and literals[-1] == 0:
+                literals.pop()
+
+            yield literals
+
+def build_cnf_worker(
+    board_size: int,
+    encoder_class: type[NQueensEncoder],
+    cnf_path: str,
+    result_sender,
+):
+    """Build clauses and save them to a file in an isolated process."""
+    try:
+        encoder = encoder_class()
+
+        start = time.perf_counter()
+        clauses = build_nqueens_clauses(board_size, encoder)
+        build_time = time.perf_counter() - start
+
+        num_variables, num_clauses = write_dimacs(clauses, cnf_path)
+
+        result_sender.send({
+            "ok": True,
+            "build_time": build_time,
+            "num_variables": num_variables,
+            "num_clauses": num_clauses,
+        })
+
+    except Exception:
+        try:
+            result_sender.send({
+                "ok": False,
+                "error": traceback.format_exc(),
+            })
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+    finally:
+        result_sender.close()
+
+def solve_cnf_worker(
+    cnf_path: str,
+    solver_name: str,
+    result_sender,
+):
+    """Load the CNF from disk and solve it in an isolated process."""
+    solver = None
+
+    try:
+        # Loading the CNF is included in the process-level timeout.
+        solver = Solver(
+            name=solver_name,
+            bootstrap_with=iter_dimacs_clauses(cnf_path),
+        )
+
+        start = time.perf_counter()
+        is_sat = solver.solve()
+        solve_time = time.perf_counter() - start
+
+        result_sender.send({
+            "ok": True,
+            "is_sat": is_sat,
+            "solve_time": solve_time,
+        })
+
+    except Exception:
+        try:
+            result_sender.send({
+                "ok": False,
+                "error": traceback.format_exc(),
+            })
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+    finally:
+        if solver is not None:
+            solver.delete()
+        result_sender.close()
+
+def run_isolated_stage(target, args, timeout_seconds):
+    """
+    Run one stage with its own process and timeout.
+    Returns (status, payload).
+    """
+    receiver, sender = multiprocessing.Pipe(duplex=False)
+
+    process = multiprocessing.Process(
+        target=target,
+        args=(*args, sender),
+    )
+
+    start = time.perf_counter()
+    process.start()
+    sender.close()
+
+    process.join(timeout_seconds)
+    elapsed = time.perf_counter() - start
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+
+        # Escalate if the OS has not stopped the process.
+        if process.is_alive():
+            process.kill()
+            process.join()
+
+        receiver.close()
+        return "TIMEOUT", {"elapsed": elapsed}
+
+    if receiver.poll(2):
+        try:
+            payload = receiver.recv()
+        except EOFError:
+            payload = None
+    else:
+        payload = None
+
+    receiver.close()
+
+    if payload is None:
+        return "ERROR", {
+            "error": f"Worker exited with code {process.exitcode} without a result."
+        }
+
+    if not payload.get("ok"):
+        return "ERROR", payload
+
+    return "OK", payload
+
+def solve_with_timeout(
+    encoders,
+    board_sizes,
+    build_timeout_seconds: float,
+    solve_timeout_seconds: float,
+):
     results = {}
 
-    # Create a process for each encoder and board size
-    for encoder_name, encoder_class in encoders:
-        for size in board_sizes:
-            print(f"Running {encoder_name} Encoder for board size: {size}")
-            encoder = encoder_class()
-            process = multiprocessing.Process(target=solve, args=(encoder_name, encoder, size, result_queue))
-            process.start()
-            process.join(timeout_second)
-            
-            if process.is_alive():
-                process.terminate()
-                process.join()
-                result_queue.put(SolveReport(
-                    method_name=encoder_name,
-                    board_size=size,
-                    result_index=ResultIndex.TIMEOUT,
-                    clause_build_time=0,
-                    solve_time=0,
-                    num_clauses=0,
-                    num_variables=0
-                ))
+    for encoder_name, encoder_class in encoders.items():
+        results[encoder_name] = {}
 
-    while not result_queue.empty():
-        result = result_queue.get()
-        if result.method_name not in results:
-            results[result.method_name] = {}
-        results[result.method_name][result.board_size] = result
-    
+        for size in board_sizes:
+            print(f"Running {encoder_name} for board size {size}")
+
+            # Each benchmark gets its own temporary CNF file.
+            fd, cnf_path = tempfile.mkstemp(suffix=".cnf")
+            os.close(fd)
+
+            build_time = 0.0
+            solve_time = 0.0
+            num_variables = 0
+            num_clauses = 0
+
+            try:
+                # Stage A: build timeout is independent of solve timeout.
+                status, build_result = run_isolated_stage(
+                    build_cnf_worker,
+                    (size, encoder_class, cnf_path),
+                    build_timeout_seconds,
+                )
+
+                if status == "TIMEOUT":
+                    print(f"Build timeout: {encoder_name}, N={size}")
+                    report = SolveReport(
+                        method_name=encoder_name,
+                        board_size=size,
+                        result_index=ResultIndex.TIMEOUT,
+                        clause_build_time=build_result["elapsed"],
+                        solve_time=0,
+                        num_clauses=0,
+                        num_variables=0,
+                    )
+
+                elif status == "ERROR":
+                    print(build_result.get("error", "Unknown build error"))
+                    report = SolveReport(
+                        method_name=encoder_name,
+                        board_size=size,
+                        result_index=ResultIndex.ERROR,
+                        clause_build_time=0,
+                        solve_time=0,
+                        num_clauses=0,
+                        num_variables=0,
+                    )
+
+                else:
+                    build_time = build_result["build_time"]
+                    num_variables = build_result["num_variables"]
+                    num_clauses = build_result["num_clauses"]
+
+                    # Stage B: timeout starts only after build has finished.
+                    status, solve_result = run_isolated_stage(
+                        solve_cnf_worker,
+                        (cnf_path, SOLVER_NAME),
+                        solve_timeout_seconds,
+                    )
+
+                    if status == "TIMEOUT":
+                        print(f"Solve timeout: {encoder_name}, N={size}")
+                        report = SolveReport(
+                            method_name=encoder_name,
+                            board_size=size,
+                            result_index=ResultIndex.TIMEOUT,
+                            clause_build_time=build_time,
+                            solve_time=solve_result["elapsed"],
+                            num_clauses=num_clauses,
+                            num_variables=num_variables,
+                        )
+
+                    elif status == "ERROR":
+                        print(solve_result.get("error", "Unknown solve error"))
+                        report = SolveReport(
+                            method_name=encoder_name,
+                            board_size=size,
+                            result_index=ResultIndex.ERROR,
+                            clause_build_time=build_time,
+                            solve_time=0,
+                            num_clauses=num_clauses,
+                            num_variables=num_variables,
+                        )
+
+                    else:
+                        solve_time = solve_result["solve_time"]
+                        result_index = (
+                            ResultIndex.SAT
+                            if solve_result["is_sat"]
+                            else ResultIndex.UNSAT
+                        )
+
+                        report = SolveReport(
+                            method_name=encoder_name,
+                            board_size=size,
+                            result_index=result_index,
+                            clause_build_time=build_time,
+                            solve_time=solve_time,
+                            num_clauses=num_clauses,
+                            num_variables=num_variables,
+                        )
+
+                results[encoder_name][size] = report
+
+                print(
+                    f"Result: {report.result_index.name} | "
+                    f"Build: {report.clause_build_time:.2f}s | "
+                    f"Solve: {report.solve_time:.2f}s | "
+                    f"Clauses: {report.num_clauses}"
+                )
+
+            finally:
+                try:
+                    os.remove(cnf_path)
+                except FileNotFoundError:
+                    pass
+
     return results
 
 def run_sat_solvers():
     print("Running SAT Solvers...")
     
-    results = solve_with_timeout(Encoders.items(), board_sizes, timeout_seconds)
+    results = solve_with_timeout(Encoders, board_sizes, timeout_seconds, timeout_seconds)
     for encoder_name, encoder_results in results.items():
         print("*" * 70)
         print(f"Results for {encoder_name} Encoder:")
