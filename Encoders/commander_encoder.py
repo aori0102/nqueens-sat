@@ -4,7 +4,6 @@ group_size = 4
 
 class CommanderEncoder(NQueensEncoder):
     def encode_amo(self, variables: list[int], auxilary_variable: int) -> tuple[list[list[int]], int]:
-        clauses = []
         n = len(variables)
         
         if n <= 1:

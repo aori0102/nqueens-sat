@@ -3,19 +3,22 @@ from ConstraintProgramming.cplex_cp import solve_cplex_cp_with_timeout
 from Encoders.binary_encoder import BinaryEncoder
 from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
+from Encoders.product_encoder import ProductEncoder
 from Encoders.sequential_encoder import SequentialEncoder
 from utils import build_nqueens_clauses, SolveReport, ResultIndex, export_reports_to_csv, print_board, validate
 import time
 import multiprocessing
 import traceback
+import argparse
 
-board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81, 100, 125, 216, 343, 512, 729, 1000, 1331]
+board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81]#, 100, 125, 216, 343, 512, 729, 1000, 1331]
 solver_name = "cadical153"
-timeout_seconds = 20
+timeout_seconds = 100
 Encoders = {
     "Binary": BinaryEncoder,
     "Commander" : CommanderEncoder,
-    "Sequential" : SequentialEncoder
+    "Sequential" : SequentialEncoder,
+    "Product" : ProductEncoder
 }
 solve_results = []
 
