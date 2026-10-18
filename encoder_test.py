@@ -5,7 +5,7 @@ from Encoders.product_encoder import ProductEncoder
 from Encoders.sequential_encoder import SequentialEncoder
 from utils import build_nqueens_clauses, validate
 
-encoder = ProductEncoder()
+encoder = CommanderEncoder()
 solver_name = "cadical153"
 board_sizes = [4, 8, 9, 16, 25, 27, 36, 49, 64, 81]
 

@@ -9,7 +9,8 @@ from Encoders.sequential_encoder import SequentialEncoder
 from Encoders.pairwise_encoder import PairwiseEncoder
 from IntegerLinearProgramming.cplex_mip import solve_cplex_mip_with_timeout
 from IntegerLinearProgramming.gurobi_mip import solve_gurobi_with_timeout
-from utils import build_nqueens_clauses, SolveReport, ResultIndex, combine_csv_reports, export_reports_to_csv, print_board, validate
+from utils import build_nqueens_clauses, SolveReport, ResultIndex
+from csv_helper import export_reports_to_csv, combine_csv_reports
 import time
 import multiprocessing
 import traceback
@@ -415,7 +416,8 @@ if __name__ == "__main__":
     benchmark_file = "benchmark_results.csv"
     
     if args.combine_reports:
-        combine_csv_reports([
+        files = [
+            "benchmark_results_pairwise.csv",
             "benchmark_results_binary.csv",
             "benchmark_results_commander.csv",
             "benchmark_results_sequential.csv",
@@ -424,7 +426,15 @@ if __name__ == "__main__":
             "benchmark_results_cplex_mip.csv",
             "benchmark_results_cpsat.csv",
             "benchmark_results_gurobi_mip.csv"
-        ], "benchmark_results_combined.csv")
+        ]
+        directories = [
+            "Results/Run1",
+            "Results/Run2", 
+            "Results/Run3",
+            "Results/Run4",
+            "Results/Run5"
+        ]
+        combine_csv_reports(file_names=files, directories=directories)
         exit(0)
     
     if args.sat_pairwise:
