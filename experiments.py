@@ -6,6 +6,7 @@ from Encoders.commander_encoder import CommanderEncoder
 from Encoders.nqueens_encoder import NQueensEncoder
 from Encoders.product_encoder import ProductEncoder
 from Encoders.sequential_encoder import SequentialEncoder
+from Encoders.pairwise_encoder import PairwiseEncoder
 from IntegerLinearProgramming.cplex_mip import solve_cplex_mip_with_timeout
 from IntegerLinearProgramming.gurobi_mip import solve_gurobi_with_timeout
 from utils import build_nqueens_clauses, SolveReport, ResultIndex, combine_csv_reports, export_reports_to_csv, print_board, validate
@@ -399,6 +400,7 @@ def run_gurobi_mip_solver():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run N-Queens Solvers")
+    parser.add_argument("--sat-pairwise", action="store_true", help="Run SAT solver with Pairwise encoding")
     parser.add_argument("--sat-binary", action="store_true", help="Run SAT solver with Binary encoding")
     parser.add_argument("--sat-commander", action="store_true", help="Run SAT solver with Commander encoding")
     parser.add_argument("--sat-sequential", action="store_true", help="Run SAT solver with Sequential encoding")
@@ -425,7 +427,11 @@ if __name__ == "__main__":
         ], "benchmark_results_combined.csv")
         exit(0)
     
-    if args.sat_binary:
+    if args.sat_pairwise:
+        Encoders = {"Pairwise": PairwiseEncoder}
+        benchmark_file = "benchmark_results_pairwise.csv"
+        run_sat_solvers()
+    elif args.sat_binary:
         Encoders = {"Binary": BinaryEncoder}
         benchmark_file = "benchmark_results_binary.csv"
         run_sat_solvers()
